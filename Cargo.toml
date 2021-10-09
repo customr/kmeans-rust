@@ -1,0 +1,12 @@
+[package]
+name = "kmeans"
+version = "0.1.0"
+edition = "2018"
+authors = ["Maxim Shipitsin <shipicin_max@mail.ru>"]
+description = "K-means algorithm in Rust for fast clustering in 2 and 3 dimensions"
+readme = "README.md"
+repository = "https://github.com/customr/kmeans-rust"
+
+[dependencies]
+num-traits = "0.2.14"
+rand = "0.7.2"
