@@ -1,126 +1,92 @@
-use crate::utils::*;
-use rand::seq::SliceRandom;
-use num_traits::{Num, Float};
+use rand::{SeedableRng};
+use rand::rngs::StdRng;
+use crate::initialize;
 
+const SEED: u64 = 12345;
 
-#[derive(Debug, PartialEq)]
-pub enum KmeansError{
-    ZeroInput
-}
+pub trait KmeansPoint: Clone + Sized {
+    fn get_squared_distance(&self, point: &Self) -> f32;
 
-#[derive(Clone, Debug)]
-pub struct KmeansSettings{
-    min_delta: f32,
-    max_iterations: u16,
-    centroids_num: u8
-}
+    fn get_mean_point(points: &Vec<&Self>) -> Self;
 
-#[derive(Clone, Debug)]
-pub struct Kmeans<'a, P, const D: usize> 
-where P: 'a + Float + Num + PartialOrd + Clone {
-    points: &'a Vec<[P; D]>,
-    centroids: Vec<[P; D]>,
-    labels: Vec<u8>,
-    settings: KmeansSettings
-}
+    fn get_color_format(&self) -> String;
 
-impl<'a, P, const D:usize> Kmeans<'a, P, D> 
-where P: 'a + Float + Num + PartialOrd + Clone {
-    pub fn new(
-        points: &'a Vec<[P; D]>,
-        settings: KmeansSettings
-    ) -> Result<Self, KmeansError> {
-        if points.len() < 2 {
-            Err(
-                KmeansError::ZeroInput
-            )
-        } else {
-            Ok(
-                Kmeans {
-                    points: points,
-                    centroids: Vec::new(),
-                    labels: vec![0; points.len()],
-                    settings: settings
-                }
-            )
-        }
-    }
-    fn init(&mut self) {
-        for _ in 0..self.settings.centroids_num {
-            self.centroids.push(
-                self.points.choose(&mut rand::thread_rng()).unwrap().clone()
-            )
-        }
-    }
-    fn recenter(&mut self) {
-        
-    }
-    fn sse(p1: &[P; D], p2: &[P; D]) -> P {
-        let mut sse = P::zero();
-        for d in 0..D {
-            sse = sse + (p1[d]-p2[d]).powf(P::from(2).unwrap())
-        }
-        sse
-    }
-    fn predict(&self, point: &[P; D]) -> u8 {
-        let mut centroid: u8 = 0;
-        let mut min_dist: P = P::infinity();
-        let mut dist: P;
-        for c in 0..self.centroids.len() {
-            dist = Kmeans::sse(point, &self.centroids[c]);
-            if dist < min_dist {
-                min_dist = dist;
-                centroid = c as u8;
+    fn get_color_format_with_palette(&self) -> String;
+
+    fn get_nearest_cluster(&self, from: &Vec<Cluster<Self>>) -> Option<(u8, f32)> {
+        if from.len() == 0 {
+            return None
+        } 
+
+        let mut min: f32 = f32::MAX;
+        let mut nearest: u8 = from[0].index;
+
+        for p in from {
+            let dist = p.point.get_squared_distance(self);
+            if dist < min {
+                min = dist;
+                nearest = p.index;
             }
         }
-        centroid
-    }
-    pub fn fit(&mut self) {
-        self.init();
-        for _ in 1..=self.settings.max_iterations {
-            for p in 0..self.points.len() {
-                self.labels[p] = self.predict(&self.points[p])
-            }
-            self.recenter()
-        }
+        Some((nearest, min))
     }
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct Cluster<P: KmeansPoint> {
+    pub point: P,
+    pub index: u8,
+    pub weight: f32
+}
 
+#[derive(Debug)]
+pub struct Kmeans<T: KmeansPoint> {
+    dataset: Vec<T>,
+    pub clusters: Vec<Cluster<T>>,
+    pub labels: Vec<u8>
+}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl<T: KmeansPoint> Kmeans<T> {
+    pub fn init(dataset: Vec<T>, n_clusters: u8) -> Self {
+        let mut clusters = Vec::with_capacity(n_clusters as usize);
+        let labels = vec![0; dataset.len()];
+        let mut rng = StdRng::seed_from_u64(SEED);
+        initialize::init_plus_plus(&dataset, &mut clusters, n_clusters, &mut rng);
 
-    macro_rules! generate_points {
-        ($t:ty, $n:expr, $($count:expr),*) => {
-            {
-                let mut points: Vec<[$t; $n]> = Vec::new();
-                $(
-                    for _ in 0..$count {
-                        points.push(rand::random::<[$t; $n]>())
-                    }
-                )*
-                points
-            }
-        };
+        Kmeans {
+            dataset: dataset,
+            clusters: clusters,
+            labels: labels
+        }
     }
 
-    #[test]
-    fn fit() {
-        let points = generate_points!(f32, 2, 8);
-        let settings = KmeansSettings {
-            min_delta: 0.1,
-            max_iterations: 5,
-            centroids_num: 3
-        };
-        let mut kmeans = Kmeans::new(
-            &points,
-            settings
-        ).unwrap();
+    pub fn fit(&mut self, n_iter: u16) {
+        for _ in 0..n_iter {
+            self.assign_points();   
+            self.update_clusters();
+        }
+    }
 
-        kmeans.fit();
+    fn assign_points(&mut self) {
+        self.labels = self.dataset
+            .clone()
+            .iter()
+            .map(|p| p.get_nearest_cluster(&self.clusters).unwrap().0)
+            .collect()
+    }
 
-        println!("{:#?}", kmeans);
+    fn update_clusters(&mut self) {
+        for c in &mut self.clusters {
+            let points: Vec<&T> = self.dataset
+                .iter()
+                .zip(&mut self.labels)
+                .into_iter()
+                .filter(|(_, l)| **l == c.index)
+                .map(|(p, _)| p)
+                .collect();
+
+            c.point = T::get_mean_point(&points);
+            c.weight = points.len() as f32 / self.dataset.len() as f32
+        }
     }
 }
