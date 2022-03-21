@@ -14,9 +14,8 @@ mod tests {
     use rand::rngs::StdRng;
     use rand_distr::{Normal, Distribution};
 
-
     const SEED: u64 = 523342;
-    const N_CLUSTERS: u8 = 4;
+    const N_CLUSTERS: u8 = 6;
 
     type Point = Rgb<f32>;
 
@@ -48,7 +47,8 @@ mod tests {
                 .reduce(|acc, p| acc + p)
                 .unwrap()
         }
-        fn get_mean_point(points: &Vec<&Self>) -> Self {
+
+        fn from_mean(points: &Vec<&Self>) -> Self {
             let (mut r, mut g, mut b): (f32, f32, f32) = (0.0, 0.0, 0.0);
             for p in points {
                 r = r + p[0];
@@ -56,8 +56,9 @@ mod tests {
                 b = b + p[2];
             }
             let len = points.len() as f32;
-            Point::from([r/len, g/len, b/len] )
+            Point::from([r/len, g/len, b/len])
         }
+
         fn get_color_format(&self) -> String {
             format!(
                 "#{:02x}{:02x}{:02x}", 
@@ -66,6 +67,7 @@ mod tests {
                 (self[2]*256.0) as u8
             )
         }
+        
         fn get_color_format_with_palette(&self) -> String {
             format!(
                 "\x1B[38;2;{};{};{}m▇ {}\x1B[0m",
@@ -81,7 +83,7 @@ mod tests {
     fn find_squared_distance() {
         let point1 = Point::from([20.0,30.0,60.0]);
         let point2 = Point::from([75.0,30.0,80.0]);
-
+        
         assert_eq!(point1.get_squared_distance(&point2), 3425.0)
     }
 

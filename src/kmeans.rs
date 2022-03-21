@@ -1,13 +1,15 @@
 use rand::{SeedableRng};
 use rand::rngs::StdRng;
-use crate::initialize;
+use std::time::Instant;
+use rayon::prelude::*;
+use crate::initialize::init_plus_plus;
 
 const SEED: u64 = 12345;
 
-pub trait KmeansPoint: Clone + Sized {
+pub trait KmeansPoint: Clone + Sized + Send + Sync {
     fn get_squared_distance(&self, point: &Self) -> f32;
 
-    fn get_mean_point(points: &Vec<&Self>) -> Self;
+    fn from_mean(points: &Vec<&Self>) -> Self;
 
     fn get_color_format(&self) -> String;
 
@@ -18,11 +20,12 @@ pub trait KmeansPoint: Clone + Sized {
             return None
         } 
 
+        let mut dist: f32;
         let mut min: f32 = f32::MAX;
-        let mut nearest: u8 = from[0].index;
+        let mut nearest: u8 = 0;
 
         for p in from {
-            let dist = p.point.get_squared_distance(self);
+            dist = p.point.get_squared_distance(self);
             if dist < min {
                 min = dist;
                 nearest = p.index;
@@ -51,7 +54,13 @@ impl<T: KmeansPoint> Kmeans<T> {
         let mut clusters = Vec::with_capacity(n_clusters as usize);
         let labels = vec![0; dataset.len()];
         let mut rng = StdRng::seed_from_u64(SEED);
-        initialize::init_plus_plus(&dataset, &mut clusters, n_clusters, &mut rng);
+
+        init_plus_plus(
+            &dataset, 
+            &mut clusters, 
+            n_clusters, 
+            &mut rng
+        );
 
         Kmeans {
             dataset: dataset,
@@ -62,15 +71,21 @@ impl<T: KmeansPoint> Kmeans<T> {
 
     pub fn fit(&mut self, n_iter: u16) {
         for _ in 0..n_iter {
-            self.assign_points();   
+            // let start = Instant::now();
+            self.labels = self.assign_points();   
+            // let duration = start.elapsed();
+            // println!("Assign: {:?}", duration);
+
+            // let start = Instant::now();
             self.update_clusters();
+            // let duration = start.elapsed();
+            // println!("Update: {:?}", duration);
         }
     }
 
-    fn assign_points(&mut self) {
-        self.labels = self.dataset
-            .clone()
-            .iter()
+    fn assign_points(&self) -> Vec<u8> {
+        self.dataset
+            .par_iter()
             .map(|p| p.get_nearest_cluster(&self.clusters).unwrap().0)
             .collect()
     }
@@ -78,14 +93,13 @@ impl<T: KmeansPoint> Kmeans<T> {
     fn update_clusters(&mut self) {
         for c in &mut self.clusters {
             let points: Vec<&T> = self.dataset
-                .iter()
-                .zip(&mut self.labels)
-                .into_iter()
-                .filter(|(_, l)| **l == c.index)
+                .par_iter()
+                .zip(&self.labels)
+                .filter(|(_, &l)| l == c.index)
                 .map(|(p, _)| p)
                 .collect();
 
-            c.point = T::get_mean_point(&points);
+            c.point = T::from_mean(&points);
             c.weight = points.len() as f32 / self.dataset.len() as f32
         }
     }

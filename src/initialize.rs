@@ -1,5 +1,6 @@
 use rand::Rng;
 use rand::seq::SliceRandom;
+use rayon::prelude::*;
 use crate::{KmeansPoint, Cluster};
 
 pub fn init_plus_plus<T: KmeansPoint> (
@@ -21,25 +22,28 @@ pub fn init_plus_plus<T: KmeansPoint> (
     let mut sum: f32;
 
     for i in 1..n_clusters {
-        squared_distance = dataset.clone().into_iter().map(|p| p.get_nearest_cluster(clusters).unwrap().1).collect();
-        rnd = rng.gen_range(0.0..1.0) as f32 * squared_distance.iter().sum::<f32>();
-        sum = 0.0;
+        squared_distance = dataset
+            .clone()
+            .par_iter()
+            .map(|p| p.get_nearest_cluster(clusters).unwrap().1)
+            .collect();
 
-        'outer: loop {
-            for p in dataset {
-                sum = sum + p.get_nearest_cluster(clusters).unwrap().1;
-                if sum > rnd {
-                    clusters.push(
-                        Cluster {
-                            index: i,
-                            point: p.clone(),
-                            weight: 0.0
-                        }
-                    );
-                    break 'outer;
-                }
+        sum = squared_distance.par_iter().sum::<f32>();
+        rnd = rng.gen_range(0.0..1.0) as f32 * sum; 
+
+        sum = 0.0;
+        for pi in 0..squared_distance.len() {
+            sum = sum + squared_distance[pi];
+            if sum > rnd {
+                clusters.push(
+                    Cluster {
+                        index: i,
+                        point: dataset[pi].clone(),
+                        weight: 0.0
+                    }
+                );
+                break;
             }
-            break 'outer;
         }
     }
 }
