@@ -1,10 +1,5 @@
-use rand::{SeedableRng};
-use rand::rngs::StdRng;
-use std::time::Instant;
+use image::{Rgb, Pixel};
 use rayon::prelude::*;
-use crate::initialize::init_plus_plus;
-
-const SEED: u64 = 12345;
 
 pub trait KmeansPoint: Clone + Sized + Send + Sync {
     fn get_squared_distance(&self, point: &Self) -> f32;
@@ -15,14 +10,14 @@ pub trait KmeansPoint: Clone + Sized + Send + Sync {
 
     fn get_color_format_with_palette(&self) -> String;
 
-    fn get_nearest_cluster(&self, from: &Vec<Cluster<Self>>) -> Option<(u8, f32)> {
-        if from.len() == 0 {
-            return None
-        } 
+    fn get_nearest_cluster_distance(&self, from: &Vec<Cluster<Self>>) -> f32 {
+        from.iter().fold(f32::INFINITY, |a, b| a.min(self.get_squared_distance(&b.point)))
+    }
 
-        let mut dist: f32;
-        let mut min: f32 = f32::MAX;
+    fn get_nearest_cluster_index(&self, from: &Vec<Cluster<Self>>) -> u8 {
         let mut nearest: u8 = 0;
+        let mut dist: f32;
+        let mut min: f32 = f32::INFINITY;
 
         for p in from {
             dist = p.point.get_squared_distance(self);
@@ -31,7 +26,7 @@ pub trait KmeansPoint: Clone + Sized + Send + Sync {
                 nearest = p.index;
             }
         }
-        Some((nearest, min))
+        nearest
     }
 }
 
@@ -44,49 +39,49 @@ pub struct Cluster<P: KmeansPoint> {
 
 #[derive(Debug)]
 pub struct Kmeans<T: KmeansPoint> {
-    dataset: Vec<T>,
+    pub dataset: Vec<T>,
     pub clusters: Vec<Cluster<T>>,
     pub labels: Vec<u8>
 }
 
 impl<T: KmeansPoint> Kmeans<T> {
-    pub fn init(dataset: Vec<T>, n_clusters: u8) -> Self {
-        let mut clusters = Vec::with_capacity(n_clusters as usize);
-        let labels = vec![0; dataset.len()];
-        let mut rng = StdRng::seed_from_u64(SEED);
-
-        init_plus_plus(
-            &dataset, 
-            &mut clusters, 
-            n_clusters, 
-            &mut rng
-        );
-
-        Kmeans {
+    pub fn init(dataset: Vec<T>, n_clusters: u8, init_clusters: fn(&mut Self)) -> Self {
+        let len = dataset.len();
+        let mut _self = Kmeans {
             dataset: dataset,
-            clusters: clusters,
-            labels: labels
-        }
+            clusters: Vec::with_capacity(n_clusters as usize),
+            labels: vec![0; len]
+        };
+        init_clusters(&mut _self);
+        _self
     }
 
-    pub fn fit(&mut self, n_iter: u16) {
-        for _ in 0..n_iter {
-            // let start = Instant::now();
-            self.labels = self.assign_points();   
-            // let duration = start.elapsed();
-            // println!("Assign: {:?}", duration);
+    pub fn fit(&mut self) {
+        let mut prev_weights: Vec<f32> = vec![1.0; self.clusters.len()];
+        let mut feature: f32 = 1.0;
+        let mut prev_feature: f32 = 0.0;
 
-            // let start = Instant::now();
+        for _ in 0..20 {
+            feature = 0.0;
+            
+            self.assign_points();   
             self.update_clusters();
-            // let duration = start.elapsed();
-            // println!("Update: {:?}", duration);
+            
+            for i in 0..self.clusters.len() {
+                feature += self.clusters[i].weight / prev_weights[i];
+                prev_weights[i] = self.clusters[i].weight
+            }
+            if (feature - prev_feature).abs() < 0.1 {
+                break
+            }
+            prev_feature = feature;
         }
     }
 
-    fn assign_points(&self) -> Vec<u8> {
-        self.dataset
+    fn assign_points(&mut self) {
+        self.labels = self.dataset
             .par_iter()
-            .map(|p| p.get_nearest_cluster(&self.clusters).unwrap().0)
+            .map(|p| p.get_nearest_cluster_index(&self.clusters))
             .collect()
     }
 
@@ -102,5 +97,44 @@ impl<T: KmeansPoint> Kmeans<T> {
             c.point = T::from_mean(&points);
             c.weight = points.len() as f32 / self.dataset.len() as f32
         }
+    }
+}
+
+impl KmeansPoint for Rgb<f32> {
+    fn get_squared_distance(&self, point: &Self) -> f32 {
+        self.channels()
+            .iter()
+            .zip(point.channels())
+            .fold(0.0f32, |acc, (&p1, &p2)| acc + (p2-p1)*(p2-p1))
+    }
+
+    fn from_mean(points: &Vec<&Self>) -> Self {
+        let (mut r, mut g, mut b): (f32, f32, f32) = (0.0, 0.0, 0.0);
+        for p in points {
+            r = r + p[0];
+            g = g + p[1];
+            b = b + p[2];
+        }
+        let len = points.len() as f32;
+        Self::from([r/len, g/len, b/len])
+    }
+
+    fn get_color_format(&self) -> String {
+        format!(
+            "#{:02x}{:02x}{:02x}", 
+            (self[0]*256.0) as u8, 
+            (self[1]*256.0) as u8, 
+            (self[2]*256.0) as u8
+        )
+    }
+    
+    fn get_color_format_with_palette(&self) -> String {
+        format!(
+            "\x1B[38;2;{};{};{}m▇ {}\x1B[0m",
+            (self[0]*256.0) as u8, 
+            (self[1]*256.0) as u8, 
+            (self[2]*256.0) as u8,
+            self.get_color_format()
+        )
     }
 }
