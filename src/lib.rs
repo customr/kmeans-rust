@@ -1,8 +1,9 @@
 mod initialize;
 mod kmeans;
+mod rgb;
 
 pub use crate::initialize::{init_plus_plus, init_simple};
-pub use crate::kmeans::{Cluster, DistanceMetric, Kmeans, KmeansPoint};
+pub use crate::kmeans::{Cluster, DistanceMetric, DistanceMetrics, Kmeans, KmeansPoint};
 
 #[cfg(test)]
 mod tests {
@@ -46,12 +47,12 @@ mod tests {
 
     #[test]
     fn find_manhattan_distance() {
-        let point1 = Point::from([1., 1., 1.]);
+        let point1 = Point::from([2., 2., 2.]);
         let point2 = Point::from([1., 1., 1.]);
 
         assert_eq!(
             point1.get_distance(&point2, &DistanceMetric::Manhattan),
-            0.0
+            3.0
         )
     }
 
@@ -78,6 +79,6 @@ mod tests {
     fn test_init_plus_plus() {
         let mut rng = StdRng::seed_from_u64(SEED);
         let dataset = generate_dataset!(1024, &mut rng);
-        let kmeans = Kmeans::init(dataset, N_CLUSTERS, init_plus_plus, DistanceMetric::Squared);
+        let _ = Kmeans::init(dataset, N_CLUSTERS, init_plus_plus, DistanceMetric::Squared);
     }
 }
