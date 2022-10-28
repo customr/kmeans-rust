@@ -27,7 +27,7 @@ impl KmeansPoint for Rgb<f32> {
 
     fn from_mean(points: &Vec<&Self>) -> Self {
         let (mut r, mut g, mut b): (f32, f32, f32) = (0.0, 0.0, 0.0);
-        for p in points {
+        for &p in points {
             r = r + p[0];
             g = g + p[1];
             b = b + p[2];
